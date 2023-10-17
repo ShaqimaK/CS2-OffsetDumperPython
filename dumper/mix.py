@@ -146,12 +146,24 @@ for moduleAddress in modulesAddress:
 
     schemas.update({moduleName: dict()})
 
+
+    tableBaseAddress = moduleBucket.get("unallocatedData")
+    tableBaseAddresses = list()
+    while tableBaseAddress:
+        tableBaseAddresses.append(tableBaseAddress)
+        tableBaseAddress = module.tableNext(tableBaseAddress)
+        # if not tableBaseAddress: break
+
+    # debugPrint("———— tableBaseAddress: %s" % " -> ".join(["%s (%i)" % (hex(tableBaseAddress).upper().replace("X", "x"), tableBaseAddress) for tableBaseAddress in tableBaseAddresses]))
+    debugPrint("———— tableBaseAddressCount: %s" % len(tableBaseAddresses))
+
+
     # Table Dump
     tableCounter = 0
     tableCount = module.tableCount(moduleEntryMemory)
-    tableBaseAddress = moduleBucket.get("unallocatedData")
-    tableBaseAddressHistory = [tableBaseAddress, ]
-    while tableBaseAddress:
+    for tableBaseAddress in tableBaseAddresses:
+        if not tableBaseAddress: continue
+
         for tableIndex in range(tableCount):
             tableCounter += 1
 
@@ -160,7 +172,7 @@ for moduleAddress in modulesAddress:
 
             schemas[moduleName].update({tableName: dict()})
 
-            #Prop Dump
+            # Prop Dump
             propCount = table.propCount()
             for propIndex in range(propCount):
                 try:
@@ -174,17 +186,14 @@ for moduleAddress in modulesAddress:
                 except Exception: break
 
             if tableCounter >= moduleEntryMemory.get("blockAllocatedSize"): break
+
+        debugPrint(
+            "———— tableBaseAddress: %s (%i)" % (hex(tableBaseAddress).upper().replace("X", "x"), tableBaseAddress))
+        # debugPrint("———— tableCount: %i" % (tableIndex + 1))
         if tableCounter >= moduleEntryMemory.get("blockAllocatedSize"): break
 
-        tableBaseAddress = module.tableNext(tableBaseAddress)
-        tableBaseAddressHistory.append(tableBaseAddress)
-
-
-    debugPrint("———— tableBaseAddress (>256: %s): %s" % (moduleEntryMemory.get("blockAllocatedSize") > 256, " -> ".join(["%s (%i)" % (hex(tableBaseAddress).upper().replace("X", "x"), tableBaseAddress) for tableBaseAddress in tableBaseAddressHistory])))
-    debugPrint("———— TableCount: %i" % len(schemas[moduleName].keys()))
-    debugPrint("———— PropCount: %i" % len([ii for i in [tuple(schemas[moduleName][tableName].keys()) for tableName in schemas[moduleName].keys()] for ii in i]))
-
-
+    debugPrint("———— TableCountTotal: %i" % len(schemas[moduleName].keys()))
+    debugPrint("———— PropCountTotal: %i" % len([ii for i in [tuple(schemas[moduleName][tableName].keys()) for tableName in schemas[moduleName].keys()] for ii in i]))
 
 from json import dumps
 print(dumps(signatures, indent=4))
