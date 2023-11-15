@@ -2,7 +2,7 @@
 
 __all__ = [
     "Operation",
-    "patternConvert2Byte",
+    "pattern2Byte",
 ]
 
 
@@ -37,7 +37,7 @@ class Operation:
         return int.from_bytes(address, byteorder="little")
 
     @classmethod
-    def ripRelative(cls, cs2: Pymem, address: Union[int, hex], offset: int = 3, length: int = 7) -> Union[int, hex]:
+    def rip(cls, cs2: Pymem, address: Union[int, hex], offset: int = 3, length: int = 7) -> Union[int, hex]:
         displacement = cs2.read_int(address + offset)
         return address + length + displacement
 
@@ -52,5 +52,7 @@ class Operation:
         return int.from_bytes(result, byteorder="little")
 
 
-def patternConvert2Byte(pattern: str) -> bytes:
+def pattern2Byte(pattern: str) -> bytes:
     return rb"".join([rb"." if "?" in byte else rb"\x" + byte.encode() for byte in pattern.split(" ")])
+
+def dict2Class(data: dict) -> classmethod.__class__: return type("class", (), {**data, **{"__dict__": data}})()

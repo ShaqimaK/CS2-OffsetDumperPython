@@ -1,9 +1,44 @@
 from pymem import Pymem, process
 
 from typing import Union
-from json import dumps
+from dataclasses import dataclass
 
-from CS2.utils import Operation, patternConvert2Byte, debugPrint
+from CS2.utils import Operation, pattern2Byte, debugPrint
+
+
+
+class Offset:
+    @dataclass
+    class RecvProp:
+        name = 0x0
+        value = 0x10
+        typeA = 0x8
+        typeB = 0x8
+
+    @dataclass
+    class RecvTable:
+        name = 0x8
+        propCount = 0x1C
+        propAddressBase = 0x28
+        propAddressIndex = 0x20
+
+    @dataclass
+    class RecvModule:
+        name = 0x08
+        entryMemory = 0x588
+        entryMemoryIndex = 0x04
+        bucket = 0x5B0
+        bucketIndex = 0x08
+        tableAddress = 0x20
+        tableAddressIndex = 0x18
+
+    @dataclass
+    class schemaSystem:
+        schemaSystemPattern = "48 89 05 ? ? ? ? 4C 8D 45"
+        schemaSystemPattern = "48 8D 0D ? ? ? ? E9 ? ? ? ? CC CC CC CC 48 8D 0D ? ? ? ? E9 ? ? ? ? CC CC CC CC 48 83 EC 28"
+        moduleCount = 0x190
+        moduleBaseAddress = 0x198
+        modulesAddressIndex = 0x8
 
 
 
@@ -12,20 +47,20 @@ class RecvProp:
         self.cs2 = cs2
         self.propAddress = propAddress
     def address(self) -> Union[int, hex]: return self.propAddress
-    def name(self) -> str: return self.cs2.read_string(self.cs2.read_ulonglong(self.propAddress))
-    def value(self) -> int: return self.cs2.read_uint(self.propAddress + 0x10)
-    def type(self) -> str: return self.cs2.read_string(self.cs2.read_ulonglong(self.cs2.read_ulonglong(self.propAddress + 0x8) + 0x8))
+    def name(self) -> str: return self.cs2.read_string(self.cs2.read_ulonglong(self.propAddress + Offset.RecvProp.name))
+    def value(self) -> int: return self.cs2.read_uint(self.propAddress + Offset.RecvProp.value)
+    def type(self) -> str: return self.cs2.read_string(self.cs2.read_ulonglong(self.cs2.read_ulonglong(self.propAddress + Offset.RecvProp.typeA) + Offset.RecvProp.typeB))
 
 class RecvTable:
     def __init__(self, cs2: Pymem, tableAddress: Union[int, hex]):
         self.cs2 = cs2
         self.tableAddress = tableAddress
-        self.propAddressBase = cs2.read_ulonglong(self.tableAddress + 0x28)
+        self.propAddressBase = cs2.read_ulonglong(self.tableAddress + Offset.RecvTable.propAddressBase)
     def address(self) -> Union[int, hex]: return self.tableAddress
-    def name(self) -> str: return self.cs2.read_string(self.cs2.read_ulonglong(self.tableAddress + 0x8))
-    def propCount(self) -> int: return self.cs2.read_uint(self.tableAddress + 0x1C)
+    def name(self) -> str: return self.cs2.read_string(self.cs2.read_ulonglong(self.tableAddress + Offset.RecvTable.name))
+    def propCount(self) -> int: return self.cs2.read_uint(self.tableAddress + Offset.RecvTable.propCount)
     def prop(self, index: int) -> Union[RecvProp, None]:
-        propAddress = self.propAddressBase + (index * 0x20)
+        propAddress = self.propAddressBase + (index * Offset.RecvTable.propAddressIndex)
         return RecvProp(self.cs2, propAddress) if propAddress else None
 
 class RecvModule:
@@ -33,9 +68,9 @@ class RecvModule:
         self.cs2 = cs2
         self.moduleAddress = moduleAddress
     def address(self) -> Union[int, hex]: return self.moduleAddress
-    def name(self) -> str: return self.cs2.read_string(self.moduleAddress + 0x08)
+    def name(self) -> str: return self.cs2.read_string(self.moduleAddress + Offset.RecvModule.name)
     def entryMemory(self) -> dict:
-        blockSize, blocksPerBlob, growMode, blocksAllocated, blockAllocatedSize, peakAlloc = [self.cs2.read_uint(self.moduleAddress + 0x588 + 0x04 * i) for i in range(6)]
+        blockSize, blocksPerBlob, growMode, blocksAllocated, blockAllocatedSize, peakAlloc = [self.cs2.read_uint(self.moduleAddress + Offset.RecvModule.entryMemory + Offset.RecvModule.entryMemoryIndex * i) for i in range(6)]
         return dict(
             blockSize=blockSize, blocksPerBlob=blocksPerBlob,
             growMode=growMode,
@@ -43,7 +78,7 @@ class RecvModule:
             peakAlloc=peakAlloc
         )
     def bucket(self) -> dict:
-        allocatedData, unallocatedData = [self.cs2.read_ulonglong(self.moduleAddress + 0x5B0 + 0x08 * i) for i in range(2)]
+        allocatedData, unallocatedData = [self.cs2.read_ulonglong(self.moduleAddress + Offset.RecvModule.bucket + Offset.RecvModule.bucketIndex * i) for i in range(2)]
         return dict(
             allocatedData=allocatedData,
             unallocatedData=unallocatedData,
@@ -51,33 +86,32 @@ class RecvModule:
     def tableCount(self, entryMemory: dict) -> int: return min(entryMemory["blocksPerBlob"], entryMemory["blockAllocatedSize"])
     def tableNext(self, tableBaseAddress: Union[int, hex]) -> Union[int, hex]: return self.cs2.read_ulonglong(tableBaseAddress)
     def table(self, tableBaseAddress: Union[int, hex], index: int) -> Union[RecvTable, None]:
-        tableAddress = tableBaseAddress + 0x20 + 0x18 * index
+        tableAddress = tableBaseAddress + Offset.RecvModule.tableAddress + Offset.RecvModule.tableAddressIndex * index
         return RecvTable(self.cs2, self.cs2.read_ulonglong(tableAddress)) if tableAddress else None
 
 
 class Schemas:
-    def __init__(self, cs2: Pymem):
-        self.cs2 = cs2
+    def __init__(self, cs2: Pymem): self.cs2 = cs2
 
 
-    def schemaDump(self) -> dict:
-        schemaSystemAddress = self.cs2.pattern_scan_module(patternConvert2Byte("48 8D 0D ? ? ? ? E9 ? ? ? ? CC CC CC CC 48 8D 0D ? ? ? ? E9 ? ? ? ? CC CC CC CC 48 83 EC 28"), process.module_from_name(self.cs2.process_handle, "schemasystem.dll"))
-        schemaSystemAddress = Operation.ripRelative(self.cs2, schemaSystemAddress)
+    @classmethod
+    def dump(cls, cs2: Pymem) -> dict:
+        schemaSystemAddress = cs2.pattern_scan_module(pattern2Byte(Offset.schemaSystem.schemaSystemPattern), process.module_from_name(cs2.process_handle, "schemasystem.dll"))
+        schemaSystemAddress = Operation.rip(cs2, schemaSystemAddress)
 
-        moduleCount = self.cs2.read_uint(schemaSystemAddress + 0x190)
-        moduleBaseAddress = self.cs2.read_ulonglong(schemaSystemAddress + 0x198)
-        modulesAddress = [self.cs2.read_ulonglong(moduleBaseAddress + moduleIndex * 0x08) for moduleIndex in range(moduleCount)]
+        moduleCount = cs2.read_uint(schemaSystemAddress + Offset.schemaSystem.moduleCount)
+        moduleBaseAddress = cs2.read_ulonglong(schemaSystemAddress + Offset.schemaSystem.moduleBaseAddress)
+        modulesAddress = [cs2.read_ulonglong(moduleBaseAddress + moduleIndex * Offset.schemaSystem.modulesAddressIndex) for moduleIndex in range(moduleCount)]
 
         modules = dict()
         for moduleAddress in modulesAddress:
-            modules.update(self.moduleDump(moduleAddress))
+            modules.update(cls.moduleDump(cs2, moduleAddress))
 
         return modules
 
-
-
-    def moduleDump(self, moduleAddress: Union[int, hex]) -> dict:
-        module: RecvModule = RecvModule(self.cs2, moduleAddress)
+    @classmethod
+    def moduleDump(cls, cs2: Pymem, moduleAddress: Union[int, hex]) -> dict:
+        module: RecvModule = RecvModule(cs2, moduleAddress)
         moduleName = module.name()
         debugPrint("【Schema】【%s】" % moduleName)
 
@@ -101,7 +135,7 @@ class Schemas:
             for tableIndex in range(tableCount):
                 tableCounter += 1
 
-                tables.update(self.tableDump(module, tableBaseAddress, tableIndex))
+                tables.update(cls.tableDump(module, tableBaseAddress, tableIndex))
 
                 if tableCounter >= moduleEntryMemory.get("blockAllocatedSize"): break
             if tableCounter >= moduleEntryMemory.get("blockAllocatedSize"): break
@@ -111,22 +145,21 @@ class Schemas:
         #debugPrint("———— Schema: %s" % tables)
         return {moduleName: tables}
 
-
-
-    def tableDump(self, module: RecvModule, tableBaseAddress: Union[int, hex], tableIndex: int) -> dict:
+    @classmethod
+    def tableDump(cls, module: RecvModule, tableBaseAddress: Union[int, hex], tableIndex: int) -> dict:
         table = module.table(tableBaseAddress, tableIndex)
         tableName = table.name()
 
         props = dict()
         propCount = table.propCount()
         for propIndex in range(propCount):
-            try: props.update(self.propDump(table, propIndex))
+            try: props.update(cls.propDump(table, propIndex))
             except Exception: break
 
         return {tableName: props}
 
-
-    def propDump(self, table: RecvTable, propIndex: int) -> dict:
+    @classmethod
+    def propDump(cls, table: RecvTable, propIndex: int) -> dict:
         prop = table.prop(propIndex)
 
         if prop is None: return dict()
