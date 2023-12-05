@@ -3,6 +3,8 @@
 __all__ = [
     "Operation",
     "pattern2Byte",
+    "dict2Class",
+    "infoPrinter",
 ]
 
 
@@ -24,7 +26,7 @@ class Operation:
         return address + value
 
     @classmethod
-    def subtract(cls, cs2: Pymem, address: Union[int, hex], value: int = 0) -> Union[int, hex]:
+    def sub(cls, cs2: Pymem, address: Union[int, hex], value: int = 0) -> Union[int, hex]:
         return address - value
 
     @classmethod
@@ -32,7 +34,7 @@ class Operation:
         return cs2.read_uint(address + position)
 
     @classmethod
-    def dereference(cls, cs2: Pymem, address: Union[int, hex], times: int = 1, size: int = 8) -> Union[int, hex]:
+    def deref(cls, cs2: Pymem, address: Union[int, hex], times: int = 1, size: int = 8) -> Union[int, hex]:
         for _ in range(times): address = cs2.read_bytes(address, size)
         return int.from_bytes(address, byteorder="little")
 
@@ -56,3 +58,20 @@ def pattern2Byte(pattern: str) -> bytes:
     return rb"".join([rb"." if "?" in byte else rb"\x" + byte.encode() for byte in pattern.split(" ")])
 
 def dict2Class(data: dict) -> classmethod.__class__: return type("class", (), {**data, **{"__dict__": data}})()
+
+def infoPrinter(name: str):
+    from logging import getLogger, StreamHandler, Formatter
+
+    handler = StreamHandler()
+    handler.setFormatter(Formatter(" ".join((
+        "\033[1;31m[INFO]\033[0m",
+        "\033[1;32m[%(asctime)s]\033[0m",
+        "\033[1;35m[%(filename)s:%(lineno)d]\033[0m",
+        "\033[1;97m%(message)s\033[0m",
+    ))))
+    logger = getLogger(name)
+    logger.addHandler(handler)
+    logger.setLevel(20)
+
+    return logger.info
+
